@@ -5,7 +5,7 @@ setup(
     version='0.1',
     packages=['haba'],
     url='https://github.com/pablomitchell/haba',
-    license='None',
+    license='GPL',
     author='Pablo Mitchell',
     author_email='pablo.mitchell@gmail.com',
     description='Machine Learning Tools for Finance'
