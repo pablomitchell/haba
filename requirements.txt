@@ -1,5 +1,5 @@
 numpy==1.19.5
 matplotlib==3.3.3
 pandas==1.2.1
-statsmodels
 setuptools==49.6.0
+statsmodels

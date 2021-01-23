@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 plt.style.use('seaborn-bright')
 
 
+
 def generate_prices(start, end, drift, volatility, initial_price=10.0):
     """
     Generate synthetic return series (modeled after Brownian motion)

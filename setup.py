@@ -8,5 +8,5 @@ setup(
     license='GPL',
     author='Pablo Mitchell',
     author_email='pablo.mitchell@gmail.com',
-    description='Machine Learning Tools for Finance'
+    description='Machine Learning Framework for Finance'
 )
