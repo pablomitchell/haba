@@ -2,55 +2,22 @@
 Fractional differencing of features
 """
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+
 plt.style.use('seaborn-bright')
 
 
-
-def generate_prices(start, end, drift, volatility, initial_price=10.0):
+def get_weights(d, eps=0.00001):
     """
-    Generate synthetic return series (modeled after Brownian motion)
-    and geometrically cumulate then to produce a synthetic prices series
-
-    Parameters
-    ----------
-    start : string or date
-        start date given in %Y-%m-%d format
-    end : string or date
-        end date given in %Y-%m-%d format
-    drift : float
-        constant drift (mean) of the Brownian motion
-    volatility : float
-        constant volatility (std) of the Brownian motion
-    initial_price : float, default 10.0
-        beginning price of the series
-
-    Returns
-    -------
-    prices : pandas.Series
-
-    """
-    dt = 1.0 / 260  # time step
-
-    dates = pd.bdate_range(start, end)
-    noise = np.random.randn(len(dates))
-    rets = drift * dt + noise * volatility * np.sqrt(dt)
-    rets_ser = pd.Series(rets, index=dates)
-    prices_ser = initial_price * (1 + rets_ser).cumprod()
-
-    return prices_ser
-
-
-def get_weights(d, size):
-    """
-    Generate weights used to fractionally difference time series
+    Generate fixed window weights used to fractionally
+    difference time series
 
     Parameters
     ----------
     d : float
-    size : int
+    eps : float
 
     Returns
     -------
@@ -58,14 +25,30 @@ def get_weights(d, size):
 
     """
     weights = [1.0]
+    k = 1
 
-    for ii in range(1, size):
-        weight = -weights[-1] * (d - ii + 1) / ii
+    while True:
+        weight = -weights[-1] * (d - k + 1) / k
+
+        if abs(weight) < eps:
+            break
+
         weights.append(weight)
+        k += 1
 
     weights = np.array(weights[::-1])
 
     return weights
+
+
+def difference(ser, d, eps=0.00001):
+    weights = get_weights(d, eps)
+    width = len(weights)
+    return (ser
+            .fillna(method='ffill')
+            .rolling(width)
+            .apply(lambda x:  np.dot(weights.T, x))
+    )
 
 
 def plot_weights(d_lo, d_hi, n_plots, size):
@@ -91,16 +74,27 @@ def plot_weights(d_lo, d_hi, n_plots, size):
 
 
 if __name__ == '__main__':
-    start = '1998-01-01'
-    end = '2015-12-31'
+
+    from haba.util.tseries import generate_prices
+
+    start = '1990-01-01'
+    end = '2020-12-31'
 
     drift = 0.05
     volatility = 0.17
+    p0 = 100
+    d = 0.5
 
-    ser = generate_prices(start, end, drift, volatility)
+
+    ser = generate_prices(start, end, drift, volatility, initial_price=p0)
+    diff_ser_05 = difference(ser, d, eps=1e-5)
+    diff_ser_05_rave = diff_ser_05.rolling(3*260).mean()
+
     ser.plot()
+    diff_ser_05.plot(secondary_y=True)
+    diff_ser_05_rave.plot(secondary_y=True)
+    plt.title(f'{ser.corr(diff_ser_05):0.1f}')
     plt.show()
-
 
 
 
