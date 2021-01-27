@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 
-def generate_prices(start, end, drift, volatility, initial_price=10.0):
+def generate_prices(start, end, drift, volatility, initial_price=100.0):
     """
     Generate synthetic return series (modeled after Brownian motion)
     and geometrically cumulate then to produce a synthetic prices series
@@ -29,12 +29,15 @@ def generate_prices(start, end, drift, volatility, initial_price=10.0):
     prices : pandas.Series
 
     """
+    assert 0 < initial_price
+
     dt = 1.0 / 260  # time step 1 biz day
     dates = pd.bdate_range(start, end)
     noise = np.random.randn(len(dates))
     rets = drift * dt + noise * volatility * np.sqrt(dt)
     rets_ser = pd.Series(rets, index=dates)
     prices_ser = initial_price * (1 + rets_ser).cumprod()
+
     return prices_ser
 
 

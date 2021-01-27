@@ -1,15 +1,16 @@
 """
-Fractional differencing of features
+Fractional differencing of a time series
 """
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-plt.style.use('seaborn-bright')
+__all__ = [
+    'difference',
+]
 
 
-def get_weights(d, eps=0.00001):
+def _get_weights(d, eps=1.0e-05):
     """
     Generate fixed window weights used to fractionally
     difference time series
@@ -41,17 +42,7 @@ def get_weights(d, eps=0.00001):
     return weights
 
 
-def difference(ser, d, eps=0.00001):
-    weights = get_weights(d, eps)
-    width = len(weights)
-    return (ser
-            .fillna(method='ffill')
-            .rolling(width)
-            .apply(lambda x:  np.dot(weights.T, x))
-    )
-
-
-def plot_weights(d_lo, d_hi, n_plots, size):
+def _plot_weights(d_lo, d_hi, n_plots, size):
     """
     Plot weights used for fractionally differencing
 
@@ -62,6 +53,9 @@ def plot_weights(d_lo, d_hi, n_plots, size):
     size : int
 
     """
+    import matplotlib.pyplot as plt
+    plt.style.use('seaborn-bright')
+
     w = {}
 
     for d in np.linspace(d_lo, d_hi, n_plots):
@@ -73,8 +67,36 @@ def plot_weights(d_lo, d_hi, n_plots, size):
     plt.show()
 
 
-if __name__ == '__main__':
+def fractional_difference(ser, d, eps=1.0e-05):
+    """
+    Take the fractional difference of time series
 
+    Parameters
+    ----------
+    ser : pandas.Series
+    d : float
+        order of the differencing scheme where `d = 1`
+        means ordinary first order differencing
+    eps : float
+        determines the size of the smallest weight
+        in the fixed width differencing scheme
+
+    Returns
+    -------
+    ser_diff : pandas.Series
+
+    """
+    weights = _get_weights(d, eps)
+    width = len(weights)
+    return (ser
+            .fillna(method='ffill')
+            .rolling(width)
+            .apply(lambda x: np.dot(weights, x))
+            )
+
+
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
     from haba.util.tseries import generate_prices
 
     start = '1990-01-01'
@@ -83,18 +105,14 @@ if __name__ == '__main__':
     drift = 0.05
     volatility = 0.17
     p0 = 100
-    d = 0.5
-
+    d = 0.7
 
     ser = generate_prices(start, end, drift, volatility, initial_price=p0)
-    diff_ser_05 = difference(ser, d, eps=1e-5)
-    diff_ser_05_rave = diff_ser_05.rolling(3*260).mean()
+    diff_ser_05 = fractional_difference(ser, d)
+    diff_ser_05_rave = diff_ser_05.rolling(260).mean()
 
     ser.plot()
     diff_ser_05.plot(secondary_y=True)
     diff_ser_05_rave.plot(secondary_y=True)
-    plt.title(f'{ser.corr(diff_ser_05):0.1f}')
+    plt.title(f'Correlation {ser.corr(diff_ser_05):0.1f}')
     plt.show()
-
-
-
