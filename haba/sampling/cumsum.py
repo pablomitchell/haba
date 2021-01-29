@@ -4,7 +4,7 @@ Sampling events from a time series
 
 import pandas as pd
 
-from haba.util.misc import timer
+from haba.util.tseries import get_volatility
 
 
 def get_events(ser, threshold, kind='relative'):
@@ -32,15 +32,15 @@ def get_events(ser, threshold, kind='relative'):
     events : pandas.DatetimeIndex
 
     """
-    assert kind in ['absolute', 'relative']
+    assert kind in ['relative', 'absolute']
 
     events = []
     sum_neg = sum_pos = 0
 
-    if kind == 'absolute':
-        ser_chg = ser.fillna(method='ffill').diff().dropna()
-    elif kind == 'relative':
+    if kind == 'relative':
         ser_chg = ser.fillna(method='ffill').pct_change().dropna()
+    else:
+        ser_chg = ser.fillna(method='ffill').diff().dropna()
 
     for dt in ser_chg.index:
         sum_neg = min(0, sum_neg + ser_chg.loc[dt])

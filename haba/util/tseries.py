@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 
 
+
+
 business_days_per_year = 260
 
 
@@ -46,7 +48,7 @@ def generate_prices(start, end, drift, volatility, initial_price=100.0):
     return prices_ser
 
 
-def get_volatility(ser, window=65, name=None):
+def get_volatility(ser, span=65, name=None):
     """
     Compute volatility of 'ser'
 
@@ -54,7 +56,7 @@ def get_volatility(ser, window=65, name=None):
     ----------
     ser : pandas.Series
        assumes pandas.DatetimeIndex with freq='B'
-    window : int
+    span : int
        time horizon expressed in the same units as the data in 'ser'
     name : str
        name to give the resulting time series
@@ -65,12 +67,12 @@ def get_volatility(ser, window=65, name=None):
 
     """
     if name is None:
-        name = f'vol_{window}'
+        name = f'vol_{span}'
 
         if ser.name:
             name = f'{ser.name}_{name}'
 
-    vol = np.log(ser).diff().ewm(min_periods=window, span=window).std()
+    vol = np.log(ser).diff().ewm(min_periods=span, span=span).std()
     vol.name = name
 
     return vol
