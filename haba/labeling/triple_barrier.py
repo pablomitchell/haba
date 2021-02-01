@@ -13,7 +13,8 @@ plt.style.use('seaborn')
 
 class TripleBarrier(object):
 
-    def __init__(self, prices, span, scale, holding_period):
+    def __init__(self, prices, span, scale, holding_period,
+                 sample_method=None):
         """
         Parameters
         ----------
@@ -34,11 +35,18 @@ class TripleBarrier(object):
         holding_period : int
             the maximum holding period in days defining the vertical
             barrier
+        sample_method : str, default 'uniqueness'
+            the method used to construct sample weights
+               possible method are:  ['returns', 'uniqueness']
 
         """
         self.prices = prices
         self.scale = scale
         self.holding_period = holding_period
+        self.sample_method = sample_method
+
+        if self.sample_method is None:
+            self.sample_method = 'uniqueness'
 
         self.returns = self._get_returns()
         self.volatility = self._get_volatility()
@@ -47,29 +55,55 @@ class TripleBarrier(object):
 
         self.labels = None
 
+        # sample weight related objects
+        self.ind_matrix = None
+        self.ret_matrix = None
+        self.weights = None
+
     def __repr__(self):
         msg = str()
         show_these_dfs = [
             'prices',
             'volatility',
             'barriers',
+            'labels',
+            'weights'
         ]
         divider = '-' * 45
 
-        if self.labels is not None:
-            show_these_dfs.append('labels')
-
         for name in show_these_dfs:
             df = getattr(self, name)
+
+            if df is None:
+                continue
+
             msg += (
                 f'{name.upper()} \n'
-                f'{df.head()} \n'
+                f'{df.head().to_string()} \n'
                 f'\t...\n'
-                f'{df.tail()} \n'
+                f'{df.tail().to_string()} \n'
                 f'{divider} \n'
             )
 
         return msg
+
+    @property
+    def sample_methods(self):
+        return [
+            'returns',
+            'uniqueness',
+        ]
+
+    @staticmethod
+    def _desc(ser):
+        return pd.Series({
+            'count': ser.count(),
+            'mean': ser.mean(),
+            'median': ser.median(),
+            'std': ser.std(),
+            'min': ser.min(),
+            'max': ser.max(),
+        })
 
     @staticmethod
     def _sgn(ser):
@@ -95,7 +129,7 @@ class TripleBarrier(object):
         # Generate a pandas.Series defining the maximum holding
         # period (vertical barriers) where the index defines the
         # start date and the series value the end date
-        offset = pd.offsets.BDay(self.holding_period)
+        offset = pd.offsets.BDay(self.holding_period - 1)
         idx = self.prices.index.searchsorted(self.events + offset)
         idx = idx[idx < len(self.prices)]
 
@@ -148,23 +182,10 @@ class TripleBarrier(object):
     def _get_volatility(self):
         return self.returns.ewm(min_periods=span, span=span).std().dropna()
 
-    @staticmethod
-    def _desc(ser):
-        return pd.Series({
-            'count': ser.count(),
-            'mean': ser.mean(),
-            'median': ser.median(),
-            'std': ser.std(),
-            'min': ser.min(),
-            'max': ser.max(),
-        })
-
     def describe(self):
         if self.labels is None:
             err = 'labels empty: nothing to describe'
             raise AttributeError(err)
-
-        msg = str()
 
         label_freq, _ = np.histogram(self.labels['label'], 3)
         label_freq = [label_freq.sum()] + list(label_freq)
@@ -173,7 +194,7 @@ class TripleBarrier(object):
 
         divider = '-'*45
 
-        msg += (
+        msg = (
             f'LABEL \n'
             f'{label_desc} \n'
             f'{divider} \n'
@@ -184,14 +205,37 @@ class TripleBarrier(object):
 
         return msg
 
+    def _make_weights(self):
+        assert self.sample_method in self.sample_methods
+
+        if self.sample_method == 'uniqueness':
+            top = self.ind_matrix
+        elif self.sample_method == 'returns':
+            top = self.ret_matrix.abs()
+
+        weight = top.div(self.ind_matrix.sum(axis=0), axis=1).mean(axis=1)
+        weight = weight.div(weight.sum())
+
+        self.weights = weight
+
     def make_labels(self):
         labels = {}
 
+        self.ind_matrix = pd.DataFrame(
+            0,
+            index=self.events,
+            columns=self.volatility.index,
+        )
+        self.ret_matrix = self.ind_matrix.copy(deep=True)
+
         for start, end in self.barriers['vertical'].iteritems():
             rets = np.log(self.prices.loc[start:end]).diff().cumsum()
+
+            self.ind_matrix.loc[start, start:end] = 1
+            self.ret_matrix.loc[start, start:end] = rets
+
             top = self.barriers.at[start, 'top']
             bottom = self.barriers.at[start, 'bottom']
-
             touches = {
                 'top': rets[rets > top].index.min(),
                 'vertical': end,
@@ -202,26 +246,27 @@ class TripleBarrier(object):
             idx = touches.argmin()
             date = touches[idx]
             barrier = touches.index[idx]
-            label_ = self._barrier_to_label(barrier)
-
             labels[start] = {
                 'touch': date,
                 'vertical': end,
                 'days': pd.bdate_range(start, date).size,
-                'ret_sgn': self._sgn(rets.loc[date]),
-                'label': label_,
+                'sign': self._sgn(rets.loc[date]),
+                'label': self._barrier_to_label(barrier),
             }
 
         self.labels = pd.DataFrame.from_dict(labels, orient='index')
+        self._make_weights()
 
     def make_meta_labels(self, side):
         if self.labels is None:
             self.make_labels()
 
-        self.labels, side_aligned = self.labels.align(side, axis=0, join='inner')
+        self.labels, side_aligned = self.labels.align(side, axis=0, join='left')
         self.labels['side'] = self._sgn(side_aligned)
-        self.labels['meta_label'] = \
+        self.labels['meta_label'] = (
             self._sgn(self.labels['label'] * self.labels['side'])
+            .fillna(0)
+        )
 
     def plot(self, n_samples=None):
         """
@@ -287,10 +332,10 @@ class TripleBarrier(object):
 if __name__ == '__main__':
     from haba.util.tseries import generate_prices
 
-    start = '1990-01-01'
+    start = '2019-01-01'
     end = '2020-12-31'
-    drift = 0.07
-    volatility = 0.15
+    drift = 0.0
+    volatility = 0.17
     prices = generate_prices(start, end, drift, volatility)
 
     span = 130
@@ -300,27 +345,24 @@ if __name__ == '__main__':
         'bottom': 3,
     }
     holding_period = 15
+    sample_method = None #'returns'
     tb = TripleBarrier(
         prices,
         span=span,
         scale=scale,
         holding_period=holding_period,
+        sample_method=sample_method,
     )
-    print(tb)
+    #print(tb)
 
-    # n_samples = None
-    # n_samples = (len(prices) - span) // span
-    # tb.plot(n_samples=n_samples)
-
-    tb.make_labels()
-    print(tb)
+    n_samples = None
+    #n_samples = (len(prices) - span) // span
+    #tb.plot(n_samples=n_samples)
 
     side = tb.returns.ewm(min_periods=65, span=65).mean().dropna()
     tb.make_meta_labels(side)
     print(tb)
-
     print(tb.describe())
-
 
 
 
