@@ -182,29 +182,6 @@ class TripleBarrier(object):
     def _get_volatility(self):
         return self.returns.ewm(min_periods=span, span=span).std().dropna()
 
-    def describe(self):
-        if self.labels is None:
-            err = 'labels empty: nothing to describe'
-            raise AttributeError(err)
-
-        label_freq, _ = np.histogram(self.labels['label'], 3)
-        label_freq = [label_freq.sum()] + list(label_freq)
-        label_desc = pd.Series(label_freq, ['count', 'bottom', 'vertical', 'top'])
-        days_desc = self._desc(self.labels['days']).astype(int)
-
-        divider = '-'*45
-
-        msg = (
-            f'LABEL \n'
-            f'{label_desc} \n'
-            f'{divider} \n'
-            f'DAYS \n'
-            f'{days_desc} \n'
-            f'{divider} \n'
-        )
-
-        return msg
-
     def _make_weights(self):
         assert self.sample_method in self.sample_methods
 
@@ -218,6 +195,29 @@ class TripleBarrier(object):
 
         self.weights = weight
 
+    def describe(self):
+        if self.labels is None:
+            err = 'labels empty: nothing to describe'
+            raise AttributeError(err)
+
+        label_freq, _ = np.histogram(self.labels['label'], 3)
+        label_freq = [label_freq.sum()] + list(label_freq)
+        label_desc = pd.Series(label_freq, ['count', 'bottom', 'vertical', 'top'])
+        days_desc = self._desc(self.labels['days']).astype(int)
+
+        divider = '-' * 45
+
+        msg = (
+            f'LABEL \n'
+            f'{label_desc} \n'
+            f'{divider} \n'
+            f'DAYS \n'
+            f'{days_desc} \n'
+            f'{divider} \n'
+        )
+
+        return msg
+
     def make_labels(self):
         labels = {}
 
@@ -229,7 +229,8 @@ class TripleBarrier(object):
         self.ret_matrix = self.ind_matrix.copy(deep=True)
 
         for start, end in self.barriers['vertical'].iteritems():
-            rets = np.log(self.prices.loc[start:end]).diff().cumsum()
+            rets = np.log(self.prices.loc[start:end]).diff()
+            cum_rets = rets.cumsum()
 
             self.ind_matrix.loc[start, start:end] = 1
             self.ret_matrix.loc[start, start:end] = rets
@@ -237,9 +238,9 @@ class TripleBarrier(object):
             top = self.barriers.at[start, 'top']
             bottom = self.barriers.at[start, 'bottom']
             touches = {
-                'top': rets[rets > top].index.min(),
+                'top': cum_rets[cum_rets > top].index.min(),
                 'vertical': end,
-                'bottom': rets[rets < bottom].index.min(),
+                'bottom': cum_rets[cum_rets < bottom].index.min(),
             }
             touches = pd.Series(touches)
 
@@ -250,7 +251,7 @@ class TripleBarrier(object):
                 'touch': date,
                 'vertical': end,
                 'days': pd.bdate_range(start, date).size,
-                'sign': self._sgn(rets.loc[date]),
+                'sign': self._sgn(cum_rets.loc[date]),
                 'label': self._barrier_to_label(barrier),
             }
 
@@ -264,11 +265,16 @@ class TripleBarrier(object):
         self.labels, side_aligned = self.labels.align(side, axis=0, join='left')
         self.labels['side'] = self._sgn(side_aligned)
         self.labels['meta_label'] = (
-            self._sgn(self.labels['label'] * self.labels['side'])
-            .fillna(0)
-        )
+                self.labels['label'] == self.labels['side']
+        ).astype(int)
 
-    def plot(self, n_samples=None):
+    def hist_weights(self):
+        assert self.weights is not None
+
+        plt.hist(self.weights, bins='sqrt', density=True, alpha=0.75)
+        plt.show()
+
+    def plot_labels(self, n_samples=None):
         """
         Plot the volatility and prices with triple barriers
         super-imposed over the prices.  For longer time
@@ -329,12 +335,38 @@ class TripleBarrier(object):
         plt.show()
 
 
+def triple_barrier(prices, span, scale, holding_period,
+                   sample_method=None):
+
+    tb = TripleBarrier(
+        prices,
+        span=span,
+        scale=scale,
+        holding_period=holding_period,
+        sample_method=sample_method,
+    )
+
+    side = tb.returns.ewm(min_periods=65, span=65).mean().dropna()
+    tb.make_meta_labels(side)
+
+    print(tb)
+    print(tb.describe())
+
+    #n_samples = (len(prices) - span) // span
+    #tb.plot(n_samples=n_samples)
+    tb.hist_weights()
+
+
 if __name__ == '__main__':
+    import cProfile
+    import pstats
+    import time
+
     from haba.util.tseries import generate_prices
 
-    start = '2019-01-01'
+    start = '2000-01-01'
     end = '2020-12-31'
-    drift = 0.0
+    drift = (2 * np.random.random_sample() - 1) * 0.06
     volatility = 0.17
     prices = generate_prices(start, end, drift, volatility)
 
@@ -345,24 +377,16 @@ if __name__ == '__main__':
         'bottom': 3,
     }
     holding_period = 15
-    sample_method = None #'returns'
-    tb = TripleBarrier(
-        prices,
-        span=span,
-        scale=scale,
-        holding_period=holding_period,
-        sample_method=sample_method,
-    )
-    #print(tb)
+    sample_method = 'returns'
+    #sample_method = 'uniqueness'
 
-    n_samples = None
-    #n_samples = (len(prices) - span) // span
-    #tb.plot(n_samples=n_samples)
+    # pfile = 'trip_barrier.profile'
+    # cProfile.run('triple_barrier(prices, span, scale, holding_period, sample_method)', pfile)
+    # s = pstats.Stats(pfile)
+    # s.strip_dirs()
+    # s.sort_stats('cumtime').print_stats(50)
 
-    side = tb.returns.ewm(min_periods=65, span=65).mean().dropna()
-    tb.make_meta_labels(side)
-    print(tb)
-    print(tb.describe())
-
-
-
+    t0 = time.time()
+    triple_barrier(prices, span, scale, holding_period, sample_method)
+    t1 = time.time()
+    print(f'{t1 - t0:0.4f} seconds')
