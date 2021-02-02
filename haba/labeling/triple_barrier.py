@@ -268,9 +268,10 @@ class TripleBarrier(object):
                 self.labels['label'] == self.labels['side']
         ).astype(int)
 
-    def hist_weights(self):
+    def plot_weights(self):
         assert self.weights is not None
 
+        plt.close('all')
         plt.hist(self.weights, bins='sqrt', density=True, alpha=0.75)
         plt.show()
 
@@ -336,7 +337,7 @@ class TripleBarrier(object):
 
 
 def triple_barrier(prices, span, scale, holding_period,
-                   sample_method=None):
+                   sample_method=None, plot=False):
 
     tb = TripleBarrier(
         prices,
@@ -352,9 +353,10 @@ def triple_barrier(prices, span, scale, holding_period,
     print(tb)
     print(tb.describe())
 
-    #n_samples = (len(prices) - span) // span
-    #tb.plot(n_samples=n_samples)
-    tb.hist_weights()
+    if plot:
+        n_samples = (len(prices) - span) // span
+        tb.plot_labels(n_samples=n_samples)
+        tb.plot_weights()
 
 
 if __name__ == '__main__':
@@ -364,9 +366,9 @@ if __name__ == '__main__':
 
     from haba.util.tseries import generate_prices
 
-    start = '2000-01-01'
+    start = '1990-01-01'
     end = '2020-12-31'
-    drift = (2 * np.random.random_sample() - 1) * 0.06
+    drift = (2 * np.random.random_sample() - 1) * 0.10
     volatility = 0.17
     prices = generate_prices(start, end, drift, volatility)
 
@@ -387,6 +389,7 @@ if __name__ == '__main__':
     # s.sort_stats('cumtime').print_stats(50)
 
     t0 = time.time()
-    triple_barrier(prices, span, scale, holding_period, sample_method)
+    triple_barrier(prices, span, scale, holding_period,
+                   sample_method=sample_method, plot=False)
     t1 = time.time()
     print(f'{t1 - t0:0.4f} seconds')
