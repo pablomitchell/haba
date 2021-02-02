@@ -195,16 +195,32 @@ class TripleBarrier(object):
         self.weights = weight
 
     def describe(self):
+        """
+        Return string showing label statistics we care
+        about including:
+            label
+                count - number of events/labels
+                bottom - number of -1 touches
+                vertical - number of 0 touches
+                top - number of +1 touches
+            days (trading)
+                count - number of events/labels
+                mean - average
+                median - median
+                std - standard deviation
+                min - minimum
+                max - maximum
+        """
         if self.labels is None:
             err = 'labels empty: nothing to describe'
             raise AttributeError(err)
+
+        divider = '-' * 45
 
         label_freq, _ = np.histogram(self.labels['label'], 3)
         label_freq = [label_freq.sum()] + list(label_freq)
         label_desc = pd.Series(label_freq, ['count', 'bottom', 'vertical', 'top'])
         days_desc = self._desc(self.labels['days']).astype(int)
-
-        divider = '-' * 45
 
         msg = (
             f'LABEL \n'
@@ -239,6 +255,8 @@ class TripleBarrier(object):
         )
         self.ret_matrix = self.ind_matrix.copy(deep=True)
 
+        # The looping is not the bottle-neck, it's all
+        # the internals.  Not sure how to vectorize...
         for start, end in self.barriers['vertical'].iteritems():
             rets = np.log(self.prices.loc[start:end]).diff()
             cum_rets = rets.cumsum()
