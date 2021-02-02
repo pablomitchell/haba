@@ -14,7 +14,7 @@ plt.style.use('seaborn')
 class TripleBarrier(object):
 
     def __init__(self, prices, span, scale, holding_period,
-                 sample_method=None):
+                 fractional_difference=False, sample_method=None):
         """
         Parameters
         ----------
@@ -35,6 +35,9 @@ class TripleBarrier(object):
         holding_period : int
             the maximum holding period in days defining the vertical
             barrier
+        fractional_difference : bool
+            use fraction differencing when computing returns rather
+            than regular differencing -- defaults to False
         sample_method : str, default 'uniqueness'
             the method used to construct sample weights
                possible method are:  ['returns', 'uniqueness']
@@ -42,6 +45,7 @@ class TripleBarrier(object):
         self.prices = prices
         self.scale = scale
         self.holding_period = holding_period
+        self.fractional_difference = fractional_difference
         self.sample_method = sample_method
 
         if self.sample_method is None:
@@ -176,7 +180,11 @@ class TripleBarrier(object):
         return pd.DatetimeIndex(events)
 
     def _get_returns(self):
-        return np.log(self.prices).diff()
+        if self.fractional_difference:
+            err = 'fractional differencing not implemented yet'
+            raise NotImplementedError(err)
+        else:
+            return np.log(self.prices).diff()
 
     def _get_volatility(self):
         return self.returns.ewm(min_periods=span, span=span).std().dropna()
