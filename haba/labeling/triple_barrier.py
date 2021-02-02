@@ -38,7 +38,6 @@ class TripleBarrier(object):
         sample_method : str, default 'uniqueness'
             the method used to construct sample weights
                possible method are:  ['returns', 'uniqueness']
-
         """
         self.prices = prices
         self.scale = scale
@@ -219,6 +218,18 @@ class TripleBarrier(object):
         return msg
 
     def make_labels(self):
+        """
+        Populates 'labels' dataframe with the following columns:
+            touch:  date of the first barrier touch
+            vertical:  date of the vertical barrier
+            days:  elapsed days from event date to first touch
+            sign:  sign of the resulting return
+            label:  label associated with the barrier touched
+                -1 : bottom barrier
+                 0 : vertical barrier
+                +1 : top barrier
+        and where 'labels' shares the same index as 'events'.
+        """
         labels = {}
 
         self.ind_matrix = pd.DataFrame(
@@ -259,6 +270,20 @@ class TripleBarrier(object):
         self._make_weights()
 
     def make_meta_labels(self, side):
+        """
+        Given a time-series of 'side' predictions, populates 'labels'
+        dataframe with the additional columns:
+            side:  the direction of the bet given by the primary model
+            meta_label:  label indicating whether 'side' is correct
+                0 : incorrect
+                1 : correct
+
+        Parameters
+        ----------
+        side : pandas.Series
+            time-series provided by a primary model giving a signal that
+            indicates the side and magnitude of the bet
+        """
         if self.labels is None:
             self.make_labels()
 
@@ -267,13 +292,6 @@ class TripleBarrier(object):
         self.labels['meta_label'] = (
                 self.labels['label'] == self.labels['side']
         ).astype(int)
-
-    def plot_weights(self):
-        assert self.weights is not None
-
-        plt.close('all')
-        plt.hist(self.weights, bins='sqrt', density=True, alpha=0.75)
-        plt.show()
 
     def plot_labels(self, n_samples=None):
         """
@@ -297,14 +315,14 @@ class TripleBarrier(object):
         else:
             axes = [axes]
 
-        ann_vol = np.sqrt(260) * self.volatility
+        ave_drift = 100 * 260 * self.returns.mean()
+        axes[0].plot(self.prices.index, self.prices)
+        axes[0].title.set_text(f'Prices (drift {ave_drift:0.1f}%)')
+
+        ann_vol = 100 * np.sqrt(260) * self.volatility
         ave_vol = ann_vol.mean()
-
-        axes[0].plot(ann_vol.index, ann_vol)
-        axes[0].title.set_text(f'Volatility (mean {ave_vol:0.2f})')
-
-        axes[1].plot(self.prices.index, self.prices)
-        axes[1].title.set_text('Prices')
+        axes[1].plot(ann_vol.index, ann_vol)
+        axes[1].title.set_text(f'Volatility (mean {ave_vol:0.1f})%')
 
         events = self.events.to_series()
 
@@ -329,15 +347,28 @@ class TripleBarrier(object):
 
             rect_top = Rectangle(xy, width, price * barriers.top, **kwargs)
             rect_bottom = Rectangle(xy, width, price * barriers.bottom, **kwargs)
-            axes[1].add_patch(rect_top)
-            axes[1].add_patch(rect_bottom)
+            axes[0].add_patch(rect_top)
+            axes[0].add_patch(rect_bottom)
 
         fig.tight_layout()
+        plt.show()
+
+    def plot_weights(self):
+        """
+        Plot histogram of sample weights
+        """
+        assert self.weights is not None
+
+        plt.close('all')
+        plt.hist(self.weights, bins='sqrt', density=True, alpha=0.75)
         plt.show()
 
 
 def triple_barrier(prices, span, scale, holding_period,
                    sample_method=None, plot=False):
+    """
+    Simple facade for profiling
+    """
 
     tb = TripleBarrier(
         prices,
@@ -368,11 +399,11 @@ if __name__ == '__main__':
 
     start = '1990-01-01'
     end = '2020-12-31'
-    drift = (2 * np.random.random_sample() - 1) * 0.10
-    volatility = 0.17
+    drift = (2 * np.random.random_sample() - 1) * 0.16
+    volatility = 0.16
     prices = generate_prices(start, end, drift, volatility)
 
-    span = 130
+    span = 65
     scale = {
         'events': 3,
         'top': 3,
@@ -381,6 +412,7 @@ if __name__ == '__main__':
     holding_period = 15
     sample_method = 'returns'
     #sample_method = 'uniqueness'
+    plot = False
 
     # pfile = 'trip_barrier.profile'
     # cProfile.run('triple_barrier(prices, span, scale, holding_period, sample_method)', pfile)
@@ -390,6 +422,6 @@ if __name__ == '__main__':
 
     t0 = time.time()
     triple_barrier(prices, span, scale, holding_period,
-                   sample_method=sample_method, plot=False)
+                   sample_method=sample_method, plot=plot)
     t1 = time.time()
     print(f'{t1 - t0:0.4f} seconds')
