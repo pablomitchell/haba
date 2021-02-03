@@ -129,7 +129,7 @@ class TripleBarrier(object):
         # Generate a pandas.Series defining the maximum holding
         # period (vertical barriers) where the index defines the
         # start date and the series value the end date
-        offset = pd.offsets.BDay(self.holding_period - 1)
+        offset = pd.offsets.BDay(self.holding_period)
         idx = self.prices.index.searchsorted(self.events + offset)
         idx = idx[idx < len(self.prices)]
 
@@ -250,7 +250,7 @@ class TripleBarrier(object):
             labels[start] = {
                 'touch': date,
                 'vertical': end,
-                'days': pd.bdate_range(start, date).size,
+                'days': pd.bdate_range(start, date).size - 1,
                 'sign': self._sgn(cum_rets.loc[date]),
                 'label': self._barrier_to_label(barrier),
             }
