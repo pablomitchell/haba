@@ -167,12 +167,13 @@ class TripleBarrier(object):
             ret = self.returns.loc[dt]
 
             sum_neg = min(0, sum_neg + ret)
-            sum_pos = max(0, sum_pos + ret)
 
             if vol < abs(sum_neg):
                 sum_neg = 0
                 events.append(dt)
                 continue
+
+            sum_pos = max(0, sum_pos + ret)
 
             if vol < abs(sum_pos):
                 sum_pos = 0
@@ -408,9 +409,9 @@ def triple_barrier(*args, **kwargs):
     print(tb.describe())
 
     if plot:
+        tb.plot_weights()
         n_samples = (len(prices) - span) // span
         tb.plot_labels(n_samples=n_samples)
-        tb.plot_weights()
 
 
 if __name__ == '__main__':
@@ -420,7 +421,7 @@ if __name__ == '__main__':
 
     from haba.util.tseries import generate_prices
 
-    start = '2000-01-01'
+    start = '2016-01-01'
     end = '2020-12-31'
     drift = (2 * np.random.random_sample() - 1) * 0.16
     volatility = 0.16
@@ -434,7 +435,7 @@ if __name__ == '__main__':
     }
     holding_period = 15
     sample_method = 'returns'
-    fractional_difference = True
+    fractional_difference = False
     plot = True
 
     # pfile = 'trip_barrier.profile'
