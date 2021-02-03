@@ -1,3 +1,7 @@
+"""
+Miscellaneous utilities
+"""
+
 import functools
 import time
 

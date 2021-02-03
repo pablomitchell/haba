@@ -4,11 +4,24 @@ Fractional differencing of a time series
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.stattools import adfuller
 
-__all__ = [
-    'difference',
-]
 
+plt.style.use('seaborn')
+
+
+
+def get_weights_test(d, n):
+    weights = [1.0]
+
+    for k in range(1, n + 1):
+        weight = -weights[-1] * (d - k + 1) / k
+        weights.append(weight)
+
+    weights = np.array(weights[::-1])
+
+    return weights
 
 def _get_weights(d, eps=1.0e-05):
     """
@@ -40,6 +53,48 @@ def _get_weights(d, eps=1.0e-05):
     weights = np.array(weights[::-1])
 
     return weights
+
+
+def plot_test(d_range, n):
+
+    ratios = {}
+
+    for d in d_range:
+        seq = []
+        w_d = get_weights_test(d, n)
+
+        for ii in range(1, n + 1):
+            ratio = np.abs(w_d[-ii:]).sum() / np.abs(w_d).sum()
+            seq.append(ratio)
+
+        ratios[d] = seq
+
+    ratios = pd.DataFrame(ratios)
+    (100*ratios).plot(logy=True, logx=True)
+    plt.xlim(1, n)
+    plt.show()
+
+def plot_test_2(d_range, n):
+    data = {}
+
+    for d in d_range:
+        w_d = get_weights_test(d, n)
+        ratio = 0
+
+        for ii in range(1, n + 1):
+            ratio = np.abs(w_d[-ii:]).sum() / np.abs(w_d).sum()
+
+            if ratio > 0.99:
+                data[d] = ii/260.
+                break
+
+            data[d] = np.nan
+
+    ratios = pd.Series(data)
+
+    ratios.plot(xlabel='d', ylabel='years')
+    plt.show()
+
 
 
 def _plot_weights(d_lo, d_hi, n_plots, size):
@@ -98,6 +153,11 @@ def fractional_difference(ser, d, eps=1.0e-05):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from haba.util.tseries import generate_prices
+
+    d_range = np.linspace(0.1, 0.9, 100)
+    plot_test_2(d_range, 10 * 260)
+    exit()
+
 
     start = '1990-01-01'
     end = '2020-12-31'
