@@ -127,7 +127,7 @@ class TripleBarrier(object):
 
         return (
             -self.scale['bottom'] * vol,
-            self.scale['top'] * vol,
+            +self.scale['top'] * vol,
         )
 
     def _get_vertical_barriers(self):
