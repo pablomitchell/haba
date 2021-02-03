@@ -8,6 +8,8 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
+from haba.differencing import fractional
+
 plt.style.use('seaborn')
 
 
@@ -180,11 +182,13 @@ class TripleBarrier(object):
         return pd.DatetimeIndex(events)
 
     def _get_returns(self):
+        log_prices = np.log(self.prices)
+
         if self.fractional_difference:
             err = 'fractional differencing not implemented yet'
             raise NotImplementedError(err)
         else:
-            return np.log(self.prices).diff()
+            return log_prices.diff()
 
     def _get_volatility(self):
         return self.returns.ewm(min_periods=span, span=span).std().dropna()
@@ -386,24 +390,17 @@ class TripleBarrier(object):
         assert self.weights is not None
 
         plt.close('all')
-        plt.hist(self.weights, bins='sqrt', density=True, alpha=0.75)
+        plt.hist(self.weights, bins='sqrt', alpha=0.75)
         plt.show()
 
 
-def triple_barrier(prices, span, scale, holding_period,
-                   sample_method=None, plot=False):
+def triple_barrier(*args, **kwargs):
     """
     Simple facade for profiling
     """
+    plot = kwargs.pop('plot', False)
 
-    tb = TripleBarrier(
-        prices,
-        span=span,
-        scale=scale,
-        holding_period=holding_period,
-        sample_method=sample_method,
-    )
-
+    tb = TripleBarrier(*args, **kwargs)
     side = tb.returns.ewm(min_periods=65, span=65).mean().dropna()
     tb.make_meta_labels(side)
 
@@ -417,13 +414,13 @@ def triple_barrier(prices, span, scale, holding_period,
 
 
 if __name__ == '__main__':
-    import cProfile
-    import pstats
+    # import cProfile
+    # import pstats
     import time
 
     from haba.util.tseries import generate_prices
 
-    start = '1990-01-01'
+    start = '2000-01-01'
     end = '2020-12-31'
     drift = (2 * np.random.random_sample() - 1) * 0.16
     volatility = 0.16
@@ -437,8 +434,8 @@ if __name__ == '__main__':
     }
     holding_period = 15
     sample_method = 'returns'
-    #sample_method = 'uniqueness'
-    plot = False
+    fractional_difference = True
+    plot = True
 
     # pfile = 'trip_barrier.profile'
     # cProfile.run('triple_barrier(prices, span, scale, holding_period, sample_method)', pfile)
@@ -448,6 +445,8 @@ if __name__ == '__main__':
 
     t0 = time.time()
     triple_barrier(prices, span, scale, holding_period,
-                   sample_method=sample_method, plot=plot)
+                   fractional_difference=fractional_difference,
+                   sample_method=sample_method,
+                   plot=plot)
     t1 = time.time()
     print(f'{t1 - t0:0.4f} seconds')

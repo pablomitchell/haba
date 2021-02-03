@@ -3,4 +3,5 @@ numpy==1.19.5
 pandas==1.2.1
 scipy==1.6.0
 setuptools==49.6.0
-statsmodels
+statsmodels==0.12.1
+

@@ -1,11 +1,9 @@
 """
-Part of haba
+Time-series utilities
 """
 
 import numpy as np
 import pandas as pd
-
-
 
 
 business_days_per_year = 260
