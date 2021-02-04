@@ -10,7 +10,7 @@ setup(
         'haba.util',
     ],
     url='https://github.com/pablomitchell/haba',
-    license='License?',
+    license='License...?',
     author='Pablo Mitchell',
     author_email='pablo.mitchell@gmail.com',
     description='Machine Learning Framework for Finance'
