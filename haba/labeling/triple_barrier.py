@@ -45,6 +45,7 @@ class TripleBarrier(object):
                possible method are:  ['returns', 'uniqueness']
         """
         self.prices = prices
+        self.span = span
         self.scale = scale
         self.holding_period = holding_period
         self.fractional_difference = fractional_difference
@@ -178,7 +179,10 @@ class TripleBarrier(object):
         return rets
 
     def _get_volatility(self):
-        return self.returns.ewm(min_periods=span, span=span).std().dropna()
+        return self.returns.ewm(
+            min_periods=self.span,
+            span=self.span,
+        ).std().dropna()
 
     def _make_weights(self):
         assert self.sample_method in self.sample_methods
@@ -416,7 +420,10 @@ def triple_barrier(*args, **kwargs):
     plot = kwargs.pop('plot', False)
 
     tb = TripleBarrier(*args, **kwargs)
-    side = tb.returns.ewm(min_periods=65, span=65).mean().dropna()
+    side = tb.returns.ewm(
+        min_periods=span,
+        span=span,
+    ).mean().dropna()
     tb.make_meta_labels(side)
 
     print(tb)
