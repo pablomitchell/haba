@@ -8,7 +8,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-from haba.differencing import fractional
+from haba.differencing.fractional import Fractional
 
 plt.style.use('seaborn')
 
@@ -183,13 +183,14 @@ class TripleBarrier(object):
         return pd.DatetimeIndex(events)
 
     def _get_returns(self):
-        log_prices = np.log(self.prices)
+        rets = np.log(self.prices).diff()
 
         if self.fractional_difference:
-            err = 'fractional differencing not implemented yet'
-            raise NotImplementedError(err)
-        else:
-            return log_prices.diff()
+            # err = 'fractional differencing not implemented yet'
+            # raise NotImplementedError(err)
+            rets = Fractional(rets.cumsum()).difference()
+
+        return rets
 
     def _get_volatility(self):
         return self.returns.ewm(min_periods=span, span=span).std().dropna()
@@ -206,6 +207,99 @@ class TripleBarrier(object):
         weight = weight.div(weight.sum())
 
         self.weights = weight
+
+    def make_labels(self):
+        """
+        Populates 'labels' dataframe with the following columns:
+            touch:  date of the first barrier touch
+            vertical:  date of the vertical barrier
+            days:  elapsed days from event date to first touch
+            sign:  sign of the resulting return
+            label:  label associated with the barrier touched
+                -1 : bottom barrier
+                 0 : vertical barrier
+                +1 : top barrier
+        and where 'labels' shares the same index as 'events'.
+        """
+        labels = {}
+
+        # work around since pandas.DataFrame.loc can be slow
+        shape = len(self.events), len(self.volatility.index)
+        ind_matrix = np.zeros(shape)
+        ret_matrix = np.zeros(shape)
+
+        for start, end in self.barriers['vertical'].iteritems():
+            rets = np.log(self.prices.loc[start:end]).diff().fillna(0)
+            cum_rets = rets.cumsum()
+
+            # populating numpy array then instantiating a
+            # dataframe is an order of magnitude faster
+            # than using .loc directly on a the dataframe
+            idx0 = self.events.searchsorted(start)
+            col0 = self.volatility.index.searchsorted(start)
+            col1 = self.volatility.index.searchsorted(end) + 1
+            ind_matrix[idx0, col0:col1] = 1
+            ret_matrix[idx0, col0:col1] = rets.values
+
+            top = self.barriers.at[start, 'top']
+            bottom = self.barriers.at[start, 'bottom']
+            touches = {
+                'top': cum_rets[cum_rets > top].index.min(),
+                'vertical': end,
+                'bottom': cum_rets[cum_rets < bottom].index.min(),
+            }
+            touches = pd.Series(touches)
+
+            idx = touches.argmin()
+            date = touches[idx]
+            barrier = touches.index[idx]
+            labels[start] = {
+                'touch': date,
+                'vertical': end,
+                'days': pd.bdate_range(start, date).size - 1,
+                'sign': self._sgn(cum_rets.loc[date]),
+                'label': self._barrier_to_label(barrier),
+            }
+
+        self.labels = pd.DataFrame.from_dict(labels, orient='index')
+
+        # final product
+        self.ind_matrix = pd.DataFrame(
+            ind_matrix,
+            index=self.events,
+            columns=self.volatility.index,
+        )
+        self.ret_matrix = pd.DataFrame(
+            ret_matrix,
+            index=self.events,
+            columns=self.volatility.index,
+        )
+        self._make_weights()
+
+    def make_meta_labels(self, side):
+        """
+        Given a time-series of 'side' predictions, populates 'labels'
+        dataframe with the additional columns:
+            side:  the direction of the bet given by the primary model
+            meta_label:  label indicating whether 'side' is correct
+                0 : incorrect
+                1 : correct
+
+        Parameters
+        ----------
+        side : pandas.Series
+            time-series provided by a primary model giving a signal that
+            indicates the side and magnitude of the bet
+        """
+        if self.labels is None:
+            self.make_labels()
+
+        self.labels, side_aligned = \
+            self.labels.align(side, axis=0, join='left')
+        self.labels['side'] = self._sgn(side_aligned)
+        self.labels['meta_label'] = (
+                self.labels['label'] == self.labels['side']
+        ).astype(int)
 
     def describe(self):
         """
@@ -246,84 +340,6 @@ class TripleBarrier(object):
 
         return msg
 
-    def make_labels(self):
-        """
-        Populates 'labels' dataframe with the following columns:
-            touch:  date of the first barrier touch
-            vertical:  date of the vertical barrier
-            days:  elapsed days from event date to first touch
-            sign:  sign of the resulting return
-            label:  label associated with the barrier touched
-                -1 : bottom barrier
-                 0 : vertical barrier
-                +1 : top barrier
-        and where 'labels' shares the same index as 'events'.
-        """
-        labels = {}
-
-        self.ind_matrix = pd.DataFrame(
-            0,
-            index=self.events,
-            columns=self.volatility.index,
-        )
-        self.ret_matrix = self.ind_matrix.copy(deep=True)
-
-        # The looping is not the bottle-neck, it's all
-        # the internals.  Not sure how to vectorize...
-        for start, end in self.barriers['vertical'].iteritems():
-            rets = np.log(self.prices.loc[start:end]).diff()
-            cum_rets = rets.cumsum()
-
-            self.ind_matrix.loc[start, start:end] = 1
-            self.ret_matrix.loc[start, start:end] = rets
-
-            top = self.barriers.at[start, 'top']
-            bottom = self.barriers.at[start, 'bottom']
-            touches = {
-                'top': cum_rets[cum_rets > top].index.min(),
-                'vertical': end,
-                'bottom': cum_rets[cum_rets < bottom].index.min(),
-            }
-            touches = pd.Series(touches)
-
-            idx = touches.argmin()
-            date = touches[idx]
-            barrier = touches.index[idx]
-            labels[start] = {
-                'touch': date,
-                'vertical': end,
-                'days': pd.bdate_range(start, date).size - 1,
-                'sign': self._sgn(cum_rets.loc[date]),
-                'label': self._barrier_to_label(barrier),
-            }
-
-        self.labels = pd.DataFrame.from_dict(labels, orient='index')
-        self._make_weights()
-
-    def make_meta_labels(self, side):
-        """
-        Given a time-series of 'side' predictions, populates 'labels'
-        dataframe with the additional columns:
-            side:  the direction of the bet given by the primary model
-            meta_label:  label indicating whether 'side' is correct
-                0 : incorrect
-                1 : correct
-
-        Parameters
-        ----------
-        side : pandas.Series
-            time-series provided by a primary model giving a signal that
-            indicates the side and magnitude of the bet
-        """
-        if self.labels is None:
-            self.make_labels()
-
-        self.labels, side_aligned = self.labels.align(side, axis=0, join='left')
-        self.labels['side'] = self._sgn(side_aligned)
-        self.labels['meta_label'] = (
-                self.labels['label'] == self.labels['side']
-        ).astype(int)
-
     def plot_labels(self, n_samples=None):
         """
         Plot the volatility and prices with triple barriers
@@ -346,14 +362,12 @@ class TripleBarrier(object):
         else:
             axes = [axes]
 
-        ave_drift = 100 * 260 * self.returns.mean()
         axes[0].plot(self.prices.index, self.prices)
-        axes[0].title.set_text(f'Prices (drift {ave_drift:0.1f}%)')
+        axes[0].title.set_text('Prices')
 
         ann_vol = 100 * np.sqrt(260) * self.volatility
-        ave_vol = ann_vol.mean()
         axes[1].plot(ann_vol.index, ann_vol)
-        axes[1].title.set_text(f'Volatility (mean {ave_vol:0.1f})%')
+        axes[1].title.set_text('Volatility')
 
         events = self.events.to_series()
 
@@ -415,15 +429,12 @@ def triple_barrier(*args, **kwargs):
 
 
 if __name__ == '__main__':
-    # import cProfile
-    # import pstats
-    import time
-
     from haba.util.tseries import generate_prices
 
-    start = '2016-01-01'
+    start = '1990-01-01'
     end = '2020-12-31'
-    drift = (2 * np.random.random_sample() - 1) * 0.16
+    # drift = (2 * np.random.random_sample() - 1) * 0.16
+    drift = 0.0
     volatility = 0.16
     prices = generate_prices(start, end, drift, volatility)
 
@@ -435,15 +446,22 @@ if __name__ == '__main__':
     }
     holding_period = 15
     sample_method = 'returns'
-    fractional_difference = False
+    fractional_difference = True
     plot = True
 
+    # import cProfile, pstats
     # pfile = 'trip_barrier.profile'
-    # cProfile.run('triple_barrier(prices, span, scale, holding_period, sample_method)', pfile)
+    # cProfile.run(
+    #     'triple_barrier(prices, span, scale, holding_period,'
+    #     'fractional_difference=fractional_difference,'
+    #     'sample_method=sample_method)'
+    # )
     # s = pstats.Stats(pfile)
     # s.strip_dirs()
-    # s.sort_stats('cumtime').print_stats(50)
+    # s.sort_stats('cumtime').print_stats(15)
+    # exit()
 
+    import time
     t0 = time.time()
     triple_barrier(prices, span, scale, holding_period,
                    fractional_difference=fractional_difference,

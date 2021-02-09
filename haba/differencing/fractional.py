@@ -1,6 +1,4 @@
-"""
-Fractional differencing of a time series
-"""
+from itertools import product
 
 import numpy as np
 import pandas as pd
@@ -11,168 +9,129 @@ from statsmodels.tsa.stattools import adfuller
 plt.style.use('seaborn')
 
 
+class Fractional(object):
 
-def get_weights_test(d, n):
-    weights = [1.0]
+    def __init__(self, ser, cumulate=False):
+        """
+        Compute time-series fractional difference
+            https://en.wikipedia.org/wiki/Autoregressive_fractionally_integrated_moving_average
 
-    for k in range(1, n + 1):
-        weight = -weights[-1] * (d - k + 1) / k
-        weights.append(weight)
+        Parameters
+        ----------
+        ser : pandas.Series
+            time-series to difference
+        cumulate : bool
+            whether or not to arithmetically cumualte the series
+            prior to differencing
 
-    weights = np.array(weights[::-1])
+        """
+        self.cumulate = cumulate
+        self.ser = ser
 
-    return weights
+    @property
+    def ser(self):
+        return self._ser
 
-def _get_weights(d, eps=1.0e-05):
-    """
-    Generate fixed window weights used to fractionally
-    difference time series
+    @ser.setter
+    def ser(self, s):
+        self._ser = s
 
-    Parameters
-    ----------
-    d : float
-    eps : float
+        if self.cumulate:
+            self._ser = self._ser.cumsum()
 
-    Returns
-    -------
-    weights : numpy.array
+    def _get_weights(self, order, size):
+        w = pd.Series(np.arange(size))
 
-    """
-    weights = [1.0]
-    k = 1
+        # binomial coefficient generating function
+        gfunc = lambda k: (-1 ** k) * (order - k + 1) / k
 
-    while True:
-        weight = -weights[-1] * (d - k + 1) / k
+        w[1:] = w[1:].apply(gfunc).cumprod()
+        w[0] = 1
 
-        if abs(weight) < eps:
-            break
+        return w[::-1]
 
-        weights.append(weight)
-        k += 1
+    def difference(self, order=0.6, size=65):
+        """
+        Performs the differencing
 
-    weights = np.array(weights[::-1])
+        Parameters
+        ----------
+        order : float
+            the fractional order of the difference,
+            must be in the open unit interval: (0, 1)
+        size : int
+            the number of coefficients to keep in the
+            fixed size differencing equation, must
+            be in the closed interval: [2, len(ser)]
 
-    return weights
+        Returns
+        -------
+        fractional_difference : pandas.Series
 
+        """
+        order = float(order)
+        size = int(size)
 
-def plot_test(d_range, n):
+        assert (0 < order) and (order < 1)
+        assert (2 <= size) and (size <= len(self.ser))
 
-    ratios = {}
+        weights = self._get_weights(order, size)
 
-    for d in d_range:
-        seq = []
-        w_d = get_weights_test(d, n)
-
-        for ii in range(1, n + 1):
-            ratio = np.abs(w_d[-ii:]).sum() / np.abs(w_d).sum()
-            seq.append(ratio)
-
-        ratios[d] = seq
-
-    ratios = pd.DataFrame(ratios)
-    (100*ratios).plot(logy=True, logx=True)
-    plt.xlim(1, n)
-    plt.show()
-
-def plot_test_2(d_range, n):
-    data = {}
-
-    for d in d_range:
-        w_d = get_weights_test(d, n)
-        ratio = 0
-
-        for ii in range(1, n + 1):
-            ratio = np.abs(w_d[-ii:]).sum() / np.abs(w_d).sum()
-
-            if ratio > 0.99:
-                data[d] = ii/260.
-                break
-
-            data[d] = np.nan
-
-    ratios = pd.Series(data)
-
-    ratios.plot(xlabel='d', ylabel='years')
-    plt.show()
-
-
-
-def _plot_weights(d_lo, d_hi, n_plots, size):
-    """
-    Plot weights used for fractionally differencing
-
-    Parameters
-    ----------
-    d_range : sequence
-    n_plots : int
-    size : int
-
-    """
-    import matplotlib.pyplot as plt
-    plt.style.use('seaborn-bright')
-
-    w = {}
-
-    for d in np.linspace(d_lo, d_hi, n_plots):
-        w[f'{d:0.2f}'] = get_weights(d, size)
-
-    df_weights = pd.DataFrame(w, index=range(size, 0, -1))
-    ax = df_weights.plot()
-    ax.legend(loc='upper right')
-    plt.show()
-
-
-def fractional_difference(ser, d, eps=1.0e-05):
-    """
-    Take the fractional difference of time series
-
-    Parameters
-    ----------
-    ser : pandas.Series
-    d : float
-        order of the differencing scheme where `d = 1`
-        means ordinary first order differencing
-    eps : float
-        determines the size of the smallest weight
-        in the fixed width differencing scheme
-
-    Returns
-    -------
-    ser_diff : pandas.Series
-
-    """
-    weights = _get_weights(d, eps)
-    width = len(weights)
-    return (ser
+        return (self.ser
             .fillna(method='ffill')
-            .rolling(width)
-            .apply(lambda x: np.dot(weights, x))
-            )
+            .rolling(size)
+            .apply(lambda x: np.einsum('i,i', weights, x))
+            .dropna()
+        )
 
+    @staticmethod
+    def _rank(ser):
+        kwargs = {
+            'ascending': True,
+            'na_option': 'top',
+            'pct': True,
+        }
+        return ser.rank(**kwargs)
 
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    from haba.util.tseries import generate_prices
+    def test(self, order_range, size_range):
+        """
+        Test a range of order/size fractional differences then
+        rank the results by a composite weighting of correlation
+        (memory) an ADF (stationarity).  Prints a sorted dataframe
+        and plots the top ranked case.
 
-    d_range = np.linspace(0.1, 0.9, 100)
-    plot_test_2(d_range, 10 * 260)
-    exit()
+        Parameters
+        ----------
+        order_range : seq
+            sequence of floats providing a range of 'order' values
+        size_range : seq
+            sequence of ints providing a range of 'size' values
 
+        """
+        columns = ['order', 'size', 'obs', 'corr', 'adf', 'adf_crit', 'p_val']
+        out = pd.DataFrame(columns=columns)
+        grid = product(order_range, size_range)
 
-    start = '1990-01-01'
-    end = '2020-12-31'
+        for ii, (order, size) in enumerate(grid):
+            ser_diff = self.difference(order, size)
+            adf = adfuller(ser_diff, maxlag=1, regression='c', autolag=None)
+            corr = self.ser.corr(ser_diff)
+            out.loc[ii] = [order, size, adf[3], corr, adf[0], adf[4]['1%'], adf[1]]
+            print(ii)
 
-    drift = 0.05
-    volatility = 0.17
-    p0 = 100
-    d = 0.7
+        out.query('(adf < adf_crit) and (0.5 < corr)', inplace=True)
+        out['rank_adf'] = self._rank(-out['adf'])
+        out['rank_corr'] = self._rank(out['corr'])
+        out['rank'] = self._rank(out['rank_adf'] + out['rank_corr'])
+        out.sort_values('rank', inplace=True)
 
-    ser = generate_prices(start, end, drift, volatility, initial_price=p0)
-    diff_ser_05 = fractional_difference(ser, d)
-    diff_ser_05_rave = diff_ser_05.rolling(260).mean()
+        print(out.to_string(float_format='{:0.4f}'.format))
 
-    ser.plot()
-    diff_ser_05.plot(secondary_y=True)
-    diff_ser_05_rave.plot(secondary_y=True)
-    plt.title(f'Correlation {ser.corr(diff_ser_05):0.1f}')
-    plt.show()
+        order = out['order'].iloc[-1]
+        size = out['size'].iloc[-1]
+        ser_diff = self.difference(order=order, size=size)
+        corr = self.ser.corr(ser_diff)
+        self.ser.plot()
+        ser_diff.plot(secondary_y=True)
+        plt.title(f'order: {order:0.2f}, size: {size:0.0f}, corr: {corr:0.2f}')
+        plt.show()
