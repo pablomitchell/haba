@@ -99,21 +99,6 @@ class TripleBarrier(object):
             'uniqueness',
         ]
 
-    @staticmethod
-    def _desc(ser):
-        return pd.Series({
-            'count': ser.count(),
-            'mean': ser.mean(),
-            'median': ser.median(),
-            'std': ser.std(),
-            'min': ser.min(),
-            'max': ser.max(),
-        })
-
-    @staticmethod
-    def _sgn(ser):
-        return np.sign(ser).astype(int)
-
     def _barrier_to_label(self, barrier):
         return {
             'top': +1,
@@ -208,6 +193,10 @@ class TripleBarrier(object):
 
         self.weights = weight
 
+    @staticmethod
+    def _sgn(ser):
+        return np.sign(ser).astype(int)
+
     def make_labels(self):
         """
         Populates 'labels' dataframe with the following columns:
@@ -300,6 +289,17 @@ class TripleBarrier(object):
         self.labels['meta_label'] = (
                 self.labels['label'] == self.labels['side']
         ).astype(int)
+
+    @staticmethod
+    def _desc(ser):
+        return pd.Series({
+            'count': ser.count(),
+            'mean': ser.mean(),
+            'median': ser.median(),
+            'std': ser.std(),
+            'min': ser.min(),
+            'max': ser.max(),
+        })
 
     def describe(self):
         """
