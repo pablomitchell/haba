@@ -173,10 +173,12 @@ class TrendScanning(object):
 
         idx = self.labels.index
 
-        axes[0].scatter(idx, prices.loc[idx].values, c=ts.labels['label'], cmap='viridis')
+        axes[0].scatter(idx, self.prices.loc[idx].values,
+                        c=ts.labels['label'], cmap='viridis')
         axes[0].title.set_text('labels')
 
-        axes[1].scatter(idx, prices.loc[idx].values, c=ts.labels['prob'], cmap='viridis')
+        axes[1].scatter(idx, self.prices.loc[idx].values,
+                        c=ts.labels['prob'], cmap='viridis')
         axes[1].title.set_text('probability')
 
         plt.show()
