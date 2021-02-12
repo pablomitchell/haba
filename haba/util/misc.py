@@ -45,4 +45,4 @@ def sign(ser):
     ser_signed : pandas.Series
 
     """
-    return np.sign(ser).astype(int)
+    return np.sign(ser.fillna(0)).astype(int)
