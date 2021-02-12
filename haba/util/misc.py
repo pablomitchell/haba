@@ -2,27 +2,47 @@
 Miscellaneous utilities
 """
 
-import functools
-import time
+import numpy as np
+import pandas as pd
 
-def timer(func):
+
+def desc(ser):
     """
-    Print the runtime of the decorated function
+    Like pandas.Series.describe but without percentiles
+
+    Parameters
+    ----------
+    ser : pandas.Series
+
+    Returns
+    -------
+    desc : pandas.Series
+        index has elements ['count', 'mean', 'median',
+                            'std', 'min', 'max']
+
     """
-    @functools.wraps(func)
-    def wrapper_timer(*args, **kwargs):
-        number = 10
-        start_time = time.perf_counter()
+    return pd.Series({
+        'count': ser.count(),
+        'mean': ser.mean(),
+        'median': ser.median(),
+        'std': ser.std(),
+        'min': ser.min(),
+        'max': ser.max(),
+    })
 
-        for _ in range(number):
-            value = func(*args, **kwargs)
+def sign(ser):
+    """
+    Given a pandas.Series return identically sized series
+    with elements assigned integer signs for each element
+    in input
 
-        end_time = time.perf_counter()
-        ave_time = (end_time - start_time) / number
-        print(
-            f'Timer: {func.__name__!r} averaged {ave_time:.4f} '
-            f'seconds over {number} iterations.'
-        )
-        return value
+    Parameters
+    ----------
+    ser : pandas.Series
 
-    return wrapper_timer
+    Return
+    ------
+    ser_signed : pandas.Series
+
+    """
+    return np.sign(ser).astype(int)

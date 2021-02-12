@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 from haba.differencing.fractional import Fractional
+from haba.util import misc
 
 plt.style.use('seaborn')
 
@@ -197,10 +198,6 @@ class TripleBarrier(object):
 
         self.weights = weight
 
-    @staticmethod
-    def _sgn(ser):
-        return np.sign(ser).astype(int)
-
     def make_labels(self):
         """
         Populates 'labels' dataframe with the following columns:
@@ -250,7 +247,7 @@ class TripleBarrier(object):
                 'touch': date,
                 'end': end,
                 'days': pd.bdate_range(start, date).size - 1,
-                'sign': self._sgn(cum_rets.loc[date]),
+                'sign': misc.sign(cum_rets.loc[date]),
                 'label': self._barrier_to_label(barrier),
             }
 
@@ -289,21 +286,10 @@ class TripleBarrier(object):
 
         self.labels, side_aligned = \
             self.labels.align(side, axis=0, join='left')
-        self.labels['side'] = self._sgn(side_aligned)
+        self.labels['side'] = misc.sign(side_aligned)
         self.labels['meta_label'] = (
                 self.labels['label'] == self.labels['side']
         ).astype(int)
-
-    @staticmethod
-    def _desc(ser):
-        return pd.Series({
-            'count': ser.count(),
-            'mean': ser.mean(),
-            'median': ser.median(),
-            'std': ser.std(),
-            'min': ser.min(),
-            'max': ser.max(),
-        })
 
     def describe(self):
         """
@@ -331,7 +317,7 @@ class TripleBarrier(object):
         label_freq, _ = np.histogram(self.labels['label'], 3)
         label_freq = [label_freq.sum()] + list(label_freq)
         label_desc = pd.Series(label_freq, ['count', 'bottom', 'vertical', 'top'])
-        days_desc = self._desc(self.labels['days']).astype(int)
+        days_desc = misc.desc(self.labels['days']).astype(int)
 
         msg = (
             f'LABEL \n'
@@ -368,11 +354,11 @@ class TripleBarrier(object):
             axes = [axes]
 
         axes[0].plot(self.prices.index, self.prices)
-        axes[0].title.set_text('Prices')
+        axes[0].title.set_text('prices')
 
         ann_vol = 100 * np.sqrt(260) * self.volatility
         axes[1].plot(ann_vol.index, ann_vol)
-        axes[1].title.set_text('Volatility')
+        axes[1].title.set_text('volatility')
 
         events = self.events.to_series()
 
