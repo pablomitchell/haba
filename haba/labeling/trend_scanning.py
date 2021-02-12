@@ -29,6 +29,7 @@ class TrendScanning(object):
             'low' and 'high' should be large enough to allow for computation
             of t-stats resulting from linear regression
         """
+        assert not prices.isnull().any()
         assert 2 < low
         assert low < high
         assert high < len(prices)
@@ -39,6 +40,31 @@ class TrendScanning(object):
 
         self.labels = None
         self.weights = None
+
+    def __repr__(self):
+        msg = str()
+        show_these_dfs = [
+            'prices',
+            'labels',
+            'weights'
+        ]
+        divider = '-' * 45
+
+        for name in show_these_dfs:
+            df = getattr(self, name)
+
+            if df is None:
+                continue
+
+            msg += (
+                f'{name.upper()} \n'
+                f'{df.head().to_string()} \n'
+                f'\t...\n'
+                f'{df.tail().to_string()} \n'
+                f'{divider} \n'
+            )
+
+        return msg
 
     @staticmethod
     def _bin(ser):
@@ -100,17 +126,16 @@ class TrendScanning(object):
         """
         roll = (self.prices
                 .fillna(method='ffill', limit=1)
-                .dropna()
                 .rolling(window=self.hi, min_periods=self.hi)
                 )
 
-        labels = roll.apply(self._make_label).to_frame('prob').dropna()
+        labels = roll.apply(self._make_label).to_frame('prob').fillna(0)
         labels['label'] = self._bin(labels['prob'])
         labels['end'] = labels.index.copy()
         labels.index -= pd.offsets.BDay(self.hi - 1)
         labels.index.name = 'start'
 
-        self.labels = labels.get(['end', 'prob', 'label']).dropna()
+        self.labels = labels.get(['end', 'prob', 'label'])
         self._make_weights()
 
     def make_meta_labels(self, side):
@@ -171,14 +196,14 @@ class TrendScanning(object):
         else:
             axes = [axes]
 
-        idx = self.labels.index
+        labels, prices = self.labels.align(self.prices, axis=0, join='inner')
 
-        axes[0].scatter(idx, self.prices.loc[idx].values,
-                        c=ts.labels['label'], cmap='viridis')
+        axes[0].scatter(prices.index, prices.values,
+                        c=labels['label'], cmap='viridis')
         axes[0].title.set_text('labels')
 
-        axes[1].scatter(idx, self.prices.loc[idx].values,
-                        c=ts.labels['prob'], cmap='viridis')
+        axes[1].scatter(prices.index, prices.values,
+                        c=labels['prob'], cmap='viridis')
         axes[1].title.set_text('probability')
 
         plt.show()

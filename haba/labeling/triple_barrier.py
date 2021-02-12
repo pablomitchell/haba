@@ -45,6 +45,8 @@ class TripleBarrier(object):
             the method used to construct sample weights
                possible method are:  ['returns', 'uniqueness']
         """
+        assert not prices.isnull().any()
+
         self.prices = prices
         self.span = span
         self.scale = scale
