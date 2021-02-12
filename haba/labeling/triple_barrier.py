@@ -135,8 +135,8 @@ class TripleBarrier(object):
         vertical = self._get_vertical_barriers()
         data = {
             'bottom': bottom,
-            'top': top,
             'vertical': vertical,
+            'top': top,
         }
         barriers = pd.concat(data, axis=1).dropna()
         self.events = barriers.index
@@ -228,9 +228,9 @@ class TripleBarrier(object):
             # populating numpy array then instantiating a
             # dataframe is an order of magnitude faster
             # than using .loc directly on a the dataframe
-            idx0 = self.events.searchsorted(start)
-            col0 = self.volatility.index.searchsorted(start)
-            col1 = self.volatility.index.searchsorted(end) + 1
+            idx0 = self.events.get_loc(start)
+            col0 = self.volatility.index.get_loc(start)
+            col1 = self.volatility.index.get_loc(end) + 1
             ind_matrix[idx0, col0:col1] = 1
             ret_matrix[idx0, col0:col1] = rets.values
 
@@ -248,15 +248,15 @@ class TripleBarrier(object):
             barrier = touches.index[idx]
             labels[start] = {
                 'touch': date,
-                'vertical': end,
+                'end': end,
                 'days': pd.bdate_range(start, date).size - 1,
                 'sign': self._sgn(cum_rets.loc[date]),
                 'label': self._barrier_to_label(barrier),
             }
 
         self.labels = pd.DataFrame.from_dict(labels, orient='index')
+        self.labels.index.name = 'start'
 
-        # final product
         self.ind_matrix = pd.DataFrame(
             ind_matrix,
             index=self.events,
@@ -359,6 +359,7 @@ class TripleBarrier(object):
             events
         """
         plt.close('all')
+
         fig, axes = plt.subplots(2, 1, dpi=200, figsize=(11, 8), sharex='all')
 
         if hasattr(axes, 'flatten'):
@@ -413,34 +414,11 @@ class TripleBarrier(object):
         plt.show()
 
 
-def triple_barrier(*args, **kwargs):
-    """
-    Simple facade for profiling
-    """
-    plot = kwargs.pop('plot', False)
-
-    tb = TripleBarrier(*args, **kwargs)
-    side = tb.returns.ewm(
-        min_periods=span,
-        span=span,
-    ).mean().dropna()
-    tb.make_meta_labels(side)
-
-    print(tb)
-    print(tb.describe())
-
-    if plot:
-        tb.plot_weights()
-        n_samples = (len(prices) - span) // span
-        tb.plot_labels(n_samples=n_samples)
-
-
 if __name__ == '__main__':
     from haba.util.tseries import generate_prices
 
     start = '1990-01-01'
     end = '2020-12-31'
-    # drift = (2 * np.random.random_sample() - 1) * 0.16
     drift = 0.0
     volatility = 0.16
     prices = generate_prices(start, end, drift, volatility)
@@ -454,14 +432,16 @@ if __name__ == '__main__':
     holding_period = 15
     sample_method = 'returns'
     fractional_difference = True
-    plot = True
+    plot = False
 
     # import cProfile, pstats
-    # pfile = 'trip_barrier.profile'
+    # pfile = 'triple_barrier.profile'
     # cProfile.run(
-    #     'triple_barrier(prices, span, scale, holding_period,'
+    #     'TripleBarrier(prices, span, scale, holding_period,'
     #     'fractional_difference=fractional_difference,'
     #     'sample_method=sample_method)'
+    #     '.make_meta_labels(side=prices)',
+    #     pfile
     # )
     # s = pstats.Stats(pfile)
     # s.strip_dirs()
@@ -470,9 +450,13 @@ if __name__ == '__main__':
 
     import time
     t0 = time.time()
-    triple_barrier(prices, span, scale, holding_period,
-                   fractional_difference=fractional_difference,
-                   sample_method=sample_method,
-                   plot=plot)
+    tb = TripleBarrier(
+        prices, span, scale, holding_period,
+        fractional_difference=fractional_difference,
+        sample_method=sample_method,
+    )
+    tb.make_meta_labels(side=prices)
     t1 = time.time()
+    tb.plot_labels(n_samples=len(tb.events)//10)
+    tb.plot_weights()
     print(f'{t1 - t0:0.4f} seconds')
