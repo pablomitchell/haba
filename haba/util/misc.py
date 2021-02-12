@@ -30,19 +30,19 @@ def desc(ser):
         'max': ser.max(),
     })
 
-def sign(ser):
+
+def sign(x):
     """
-    Given a pandas.Series return identically sized series
-    with elements assigned integer signs for each element
-    in input
+    Return the sign of the input
 
     Parameters
     ----------
-    ser : pandas.Series
+    x : numerical data
+        could be pandas.Series, numpy.array, float, etc
 
     Return
     ------
-    ser_signed : pandas.Series
+    x_signed : signed numerical output
 
     """
-    return np.sign(ser.fillna(0)).astype(int)
+    return np.sign(np.nan_to_num(x)).astype(int)
