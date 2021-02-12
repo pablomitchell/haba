@@ -70,7 +70,7 @@ class TrendScanning(object):
             return np.nan
 
     def _make_weights(self):
-        prob_scaled = (2 * self.labels['prob'] - 1).pow(2)
+        prob_scaled = (2 * self.labels['prob'] - 1).abs()
         self.weights = prob_scaled / prob_scaled.sum()
 
     def _make_label(self, ser):
