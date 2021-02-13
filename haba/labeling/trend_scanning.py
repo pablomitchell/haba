@@ -118,9 +118,6 @@ class TrendScanning(object):
         self.labels = labels.get(['end', 't', 'label'])
         self._make_weights()
 
-        self.prices.to_frame('prices').info()
-        self.labels.info()
-
     def make_meta_labels(self, side):
         """
         Given a time-series of 'side' predictions, populates 'labels'
@@ -189,12 +186,10 @@ class TrendScanning(object):
 
         labels, prices = self.labels.align(self.prices, axis=0, join='inner')
 
-        axes[0].scatter(prices.index, prices.values,
-                        c=labels['label'], cmap='viridis')
+        axes[0].scatter(prices.index, prices.values, c=labels['label'], cmap='viridis')
         axes[0].title.set_text('labels')
 
-        axes[1].scatter(prices.index, prices.values,
-                        c=labels['t'], cmap='viridis')
+        axes[1].scatter(prices.index, prices.values, c=labels['t'], cmap='viridis')
         axes[1].title.set_text('t-stat')
 
         plt.show()
