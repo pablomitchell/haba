@@ -398,8 +398,19 @@ class TripleBarrier(object):
         """
         assert self.weights is not None
 
+        n_bins = int(np.sqrt(len(self.weights)))
+        n_per_bin = len(self.weights) / n_bins
+        kw = {
+            'linestyle': 'dashed',
+            'linewidth': 1,
+        }
+
         plt.close('all')
-        plt.hist(self.weights, bins='sqrt', alpha=0.75)
+        plt.hist(self.weights, bins=n_bins, alpha=0.75)
+        plt.axhline(n_per_bin, color='r', label='equal', **kw)
+        plt.axvline(self.weights.mean(), color='g', label='mean', **kw)
+        plt.legend()
+        plt.title('weights')
         plt.show()
 
 

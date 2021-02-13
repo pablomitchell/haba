@@ -108,11 +108,18 @@ class TrendScanning(object):
 
         """
         roll = self.prices.rolling(window=self.hi, min_periods=self.hi)
+
         labels = roll.apply(self._make_label).to_frame('t').dropna()
+        labels['end'] = labels.index.date
         labels['label'] = misc.sign(labels['t'])
-        self.labels = labels
-        self.labels.index.name = 'start'
+        labels.index -= pd.offsets.BDay(self.hi - 1)
+        labels.index.name = 'start'
+
+        self.labels = labels.get(['end', 't', 'label'])
         self._make_weights()
+
+        self.prices.to_frame('prices').info()
+        self.labels.info()
 
     def make_meta_labels(self, side):
         """
@@ -198,8 +205,19 @@ class TrendScanning(object):
         """
         assert self.weights is not None
 
+        n_bins = int(np.sqrt(len(self.weights)))
+        n_per_bin = len(self.weights) / n_bins
+        kw = {
+            'linestyle': 'dashed',
+            'linewidth': 1,
+        }
+
         plt.close('all')
-        plt.hist(self.weights, bins='sqrt', alpha=0.75)
+        plt.hist(self.weights, bins=n_bins, alpha=0.75)
+        plt.axhline(n_per_bin, color='r', label='equal', **kw)
+        plt.axvline(self.weights.mean(), color='g', label='mean', **kw)
+        plt.legend()
+        plt.title('weights')
         plt.show()
 
 
