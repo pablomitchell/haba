@@ -345,6 +345,7 @@ class TripleBarrier(object):
             number of triple barriers to sample and place
             on the plot, must be less than the number of
             events
+
         """
         plt.close('all')
 

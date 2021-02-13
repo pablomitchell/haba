@@ -6,7 +6,6 @@ import numba
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import t as tdist
 
 from haba.util import misc
 
@@ -23,11 +22,11 @@ class TrendScanning(object):
         ----------
         prices : pandas.Series
             series of close price data with pandas.DatetimeIndex
-        low : int
-        high : int
+        low, high : int
             specifies the look forward periods used to scan for a trend
             'low' and 'high' should be large enough to allow for computation
             of t-stats resulting from linear regression
+
         """
         assert not prices.isnull().any()
         assert 2 < low
@@ -67,19 +66,10 @@ class TrendScanning(object):
         return msg
 
     @staticmethod
-    def _bin(ser):
-        # partition uniform distribution into 3 equal parts
-        # and label them: [-1, 0, +1]
-        ser_scaled = 6 * ser - 3
-        return (ser_scaled
-                .where(1 < ser_scaled.abs(), 0)
-                .clip(-1, 1).astype(int)
-                )
-
-    @staticmethod
     @numba.jit
     def _compute_tstat(y_arr):
         # fast t-stat computation
+
         covar = lambda x, y: ((x - x.mean()) * (y - y.mean())).mean()
 
         try:
@@ -96,46 +86,32 @@ class TrendScanning(object):
             return np.nan
 
     def _make_weights(self):
-        prob_scaled = (2 * self.labels['prob'] - 1).abs()
-        self.weights = prob_scaled / prob_scaled.sum()
+        t_abs = self.labels['t'].abs()
+        self.weights = pd.Series(
+            t_abs / t_abs.sum(),
+            index=self.labels.index,
+        )
 
     def _make_label(self, ser):
-        # convert t-stat to probability
-        t_stats = (ser
-                  .expanding(min_periods=self.lo)
-                  .apply(self._compute_tstat, raw=True)
-                  )
-        idx = t_stats.abs().idxmax()
-        t_stat = t_stats[idx]
-        degrees_freedom = t_stats.index.get_loc(idx) - 1
-        return tdist.cdf(t_stat, degrees_freedom)
+        exp = ser.expanding(min_periods=self.lo)
+        ts = exp.apply(self._compute_tstat, raw=True)
+        return ts[ts.abs().idxmax()]
 
     def make_labels(self):
         """
         Populates 'labels' dataframe with the following columns:
-            end:  end date of the trend scanning period
-            prob : cumulative area under student distribution
-                ~0.0 : strong down trend
-                ~0.5 : trendless
-                ~1.0 : strong up trend
-            label:  label associated with the sign of the trend
+            t:  student distribution t-stat of trend slope coefficient
+            label:  label associated with the trend direction
                 -1 : down trend
-                 0 : no trend
                 +1 : up trend
-        and where 'labels' shares the same index as 'prices'.
+        and where 'labels' shares the same index as 'prices'
+
         """
-        roll = (self.prices
-                .fillna(method='ffill', limit=1)
-                .rolling(window=self.hi, min_periods=self.hi)
-                )
-
-        labels = roll.apply(self._make_label).to_frame('prob').fillna(0)
-        labels['label'] = self._bin(labels['prob'])
-        labels['end'] = labels.index.copy()
-        labels.index -= pd.offsets.BDay(self.hi - 1)
-        labels.index.name = 'start'
-
-        self.labels = labels.get(['end', 'prob', 'label'])
+        roll = self.prices.rolling(window=self.hi, min_periods=self.hi)
+        labels = roll.apply(self._make_label).to_frame('t').dropna()
+        labels['label'] = misc.sign(labels['t'])
+        self.labels = labels
+        self.labels.index.name = 'start'
         self._make_weights()
 
     def make_meta_labels(self, side):
@@ -152,6 +128,7 @@ class TrendScanning(object):
         side : pandas.Series
             time-series provided by a primary model giving a signal that
             indicates the side and magnitude of the bet
+
         """
         if self.labels is None:
             self.make_labels()
@@ -164,29 +141,36 @@ class TrendScanning(object):
         ).astype(int)
 
     def describe(self):
+        """
+        Return string showing label statistics we care
+        about including:
+            label
+                count - number of events/labels
+                down - number of -1 down trends
+                up - number of +1 up trends
+        """
         if self.labels is None:
             err = 'labels empty: nothing to describe'
             raise AttributeError(err)
 
         divider = '-' * 45
 
-        label_freq, _ = np.histogram(self.labels['label'], 3)
+        label_freq, _ = np.histogram(self.labels['label'], 2)
         label_freq = [label_freq.sum()] + list(label_freq)
-        label_desc = pd.Series(label_freq, ['count', 'down', 'flat', 'up'])
-        prob_desc = misc.desc(self.labels['prob']).to_string(float_format='{:.4f}'.format)
+        label_desc = pd.Series(label_freq, ['count', 'down', 'up'])
 
         msg = (
             f'LABEL \n'
-            f'{label_desc} \n'
-            f'{divider} \n'
-            f'PROB \n'
-            f'{prob_desc} \n'
-            f'{divider} \n'
+            f'{label_desc}'
         )
 
         return msg
 
     def plot_labels(self):
+        """
+        Plot the prices and color each data point depending
+        on label and t-static value
+        """
         plt.close('all')
 
         fig, axes = plt.subplots(2, 1, dpi=200, figsize=(11, 8), sharex='all')
@@ -203,8 +187,8 @@ class TrendScanning(object):
         axes[0].title.set_text('labels')
 
         axes[1].scatter(prices.index, prices.values,
-                        c=labels['prob'], cmap='viridis')
-        axes[1].title.set_text('probability')
+                        c=labels['t'], cmap='viridis')
+        axes[1].title.set_text('t-stat')
 
         plt.show()
 
@@ -215,21 +199,21 @@ class TrendScanning(object):
         assert self.weights is not None
 
         plt.close('all')
-        plt.hist(self.weights, alpha=0.75)
+        plt.hist(self.weights, bins='sqrt', alpha=0.75)
         plt.show()
 
 
 if __name__ == '__main__':
     from haba.util.tseries import generate_prices
 
-    start = '2020-01-01'
+    start = '1990-01-01'
     end = '2020-12-31'
-    # drift = 0.06
-    # volatility = 0.25
-    # prices = generate_prices(start, end, drift, volatility)
-    dates = pd.bdate_range(start=start, end=end)
-    prices = pd.Series(np.random.normal(0, 0.1, len(dates)), index=dates).cumsum()
-    prices += np.sin(np.linspace(0, 10, len(dates)))
+    drift = 0.06
+    volatility = 0.25
+    prices = generate_prices(start, end, drift, volatility)
+    # dates = pd.bdate_range(start=start, end=end)
+    # prices = pd.Series(np.random.normal(0, 0.1, len(dates)), index=dates).cumsum()
+    # prices += np.sin(np.linspace(0, 10, len(dates)))
 
     # import cProfile, pstats
     # pfile = 'trend_scanning.profile'
@@ -245,15 +229,15 @@ if __name__ == '__main__':
 
     import time
     t0 = time.time()
-    ts = TrendScanning(prices, low=10, high=20)
+    ts = TrendScanning(prices, low=65, high=260)
+    # ts.make_labels()
     ts.make_meta_labels(side=prices)
     t1 = time.time()
     print(f'{t1 - t0:0.4f} seconds')
-
+    print(ts)
+    print(ts.describe())
     ts.plot_labels()
     ts.plot_weights()
 
-    print(ts.labels.tail(25).to_string(float_format='{:.6f}'.format))
-    print(ts.describe())
 
 
