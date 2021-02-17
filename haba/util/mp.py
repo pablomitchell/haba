@@ -12,7 +12,7 @@ def amap(func, args, n_workers=None, **kwargs):
     Asynchronous map
 
     Computes func using each element of an iterable as argument.
-    Each element maps one-to-one to a process submitted via the
+    Each element maps 1-to-1 to a process submitted via the
     concurrent.futures module.  Additional arguments required by
     func may be supplied via kwargs.  Progress of amap is shown
     via tqdm progress bar.
@@ -42,14 +42,14 @@ def amap(func, args, n_workers=None, **kwargs):
     >>> results = amap(really_slow_computation, long_list_of_inputs, y=True)
 
     """
-    n_jobs = len(iterable)
+    n_jobs = len(args)
     futures = {}
 
     with tqdm(total=n_jobs, ncols=80) as progress:
         with ProcessPoolExecutor(max_workers=n_workers) as pool:
-            for ii in iterable:
-                futures[ii] = pool.submit(single_task, ii, **kwargs)
-                futures[ii].add_done_callback(lambda p: progress.update())
+            for arg in args:
+                futures[arg] = pool.submit(func, arg, **kwargs)
+                futures[arg].add_done_callback(lambda p: progress.update())
 
     results = {k: f.result() for k, f in futures.items()}
 
