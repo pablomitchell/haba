@@ -246,8 +246,8 @@ class TripleBarrier(object):
             date = touches[idx]
             barrier = touches.index[idx]
             labels[start] = {
-                'touch': date,
-                'end': end,
+                'touch': date.date(),
+                'end': end.date(),
                 'days': pd.bdate_range(start, date).size - 1,
                 'sign': misc.sign(cum_rets.loc[date]),
                 'label': self._barrier_to_label(barrier),
@@ -459,4 +459,6 @@ if __name__ == '__main__':
     t1 = time.time()
     tb.plot_labels(n_samples=len(tb.events)//10)
     tb.plot_weights()
+
+    print(tb)
     print(f'{t1 - t0:0.4f} seconds')
