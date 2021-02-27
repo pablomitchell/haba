@@ -2,6 +2,7 @@
 Time-series utilities
 """
 
+import numba
 import numpy as np
 import pandas as pd
 
@@ -74,6 +75,27 @@ def get_volatility(ser, span=65, name=None):
     vol.name = name
 
     return vol
+
+
+@numba.jit
+def numba_tstat(y_arr):
+
+    def cab(a, b):
+        # covariance of a and b
+        return ((a - a.mean()) * (b - b.mean())).mean()
+
+    try:
+        y = y_arr[~np.isnan(y_arr)]
+        n = len(y)
+        x = np.arange(n)
+        sxx = cab(x, x)
+        syy = cab(y, y)
+        sxy = cab(x, y)
+        ssr = (sxx * syy - sxy * sxy) / sxx
+        beta = sxy / sxx
+        return np.sqrt((n - 2) * sxx / ssr) * beta
+    except:
+        return np.nan
 
 
 if __name__ == '__main__':

@@ -42,7 +42,7 @@ def sign(x):
 
     Return
     ------
-    x_signed : signed numerical output
+    x_signed : numpy.ndarray of ints
 
     """
     return np.sign(np.nan_to_num(x)).astype(int)

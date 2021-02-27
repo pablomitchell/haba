@@ -2,12 +2,12 @@
 Trend scanning labeling
 """
 
-import numba
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from haba.util import misc
+from haba.util import tseries
 
 plt.style.use('seaborn')
 
@@ -28,7 +28,7 @@ class TrendScanning(object):
             of t-stats resulting from linear regression
 
         """
-        assert not prices.isnull().any()
+        assert not prices.isnull().any(), 'prices not allowed to have NAs'
         assert 2 < low
         assert low < high
         assert high < len(prices)
@@ -65,26 +65,6 @@ class TrendScanning(object):
 
         return msg
 
-    @staticmethod
-    @numba.jit
-    def _compute_tstat(y_arr):
-        # fast t-stat computation
-
-        covar = lambda x, y: ((x - x.mean()) * (y - y.mean())).mean()
-
-        try:
-            y = y_arr[~np.isnan(y_arr)]
-            n = len(y)
-            x = np.arange(n)
-            sxx = covar(x, x)
-            syy = covar(y, y)
-            sxy = covar(x, y)
-            ssr = (sxx * syy - sxy * sxy) / sxx
-            b = sxy / sxx
-            return np.sqrt((n - 2) * sxx / ssr) * b
-        except:
-            return np.nan
-
     def _make_weights(self):
         t_abs = self.labels['t'].abs()
         self.weights = pd.Series(
@@ -94,7 +74,7 @@ class TrendScanning(object):
 
     def _make_label(self, ser):
         exp = ser.expanding(min_periods=self.lo)
-        ts = exp.apply(self._compute_tstat, raw=True)
+        ts = exp.apply(tseries.numba_tstat, raw=True)
         return ts[ts.abs().idxmax()]
 
     def make_labels(self):
@@ -242,7 +222,7 @@ if __name__ == '__main__':
 
     import time
     t0 = time.time()
-    ts = TrendScanning(prices, low=65, high=260)
+    ts = TrendScanning(prices, low=21, high=65)
     # ts.make_labels()
     ts.make_meta_labels(side=prices)
     t1 = time.time()
