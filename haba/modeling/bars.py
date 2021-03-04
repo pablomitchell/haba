@@ -169,13 +169,7 @@ class BaseBars(ABC):
 
         bars = pd.DataFrame(bars)
         bars['tick_index'] = tick_index
-
-        n = 20
-        print(bars.head(n=n).to_string())
-        print(bars.tail(n=n).to_string())
-        print(np.mean(tick_index))
-
-
+        self.bars = bars
 
 class ImbalanceBars(BaseBars):
     pass
