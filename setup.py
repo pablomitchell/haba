@@ -7,6 +7,7 @@ setup(
         'haba',
         'haba.differencing',
         'haba.labeling',
+        'haba.modeling',
         'haba.util',
     ],
     url='https://github.com/pablomitchell/haba',
