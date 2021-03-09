@@ -10,8 +10,27 @@ import pandas as pd
 from haba.util import misc
 
 
-def ewa(seq, window):
-    return pd.Series(seq).ewm(window).mean().values[-1]
+@numba.njit
+def numba_ewa(arr, span):
+    decay = (span - 1.0) / (span + 1.0)
+    periods = len(arr)
+    numerator = denominator = 0.0
+
+    for t in range(periods):
+        coefficient = decay ** float(t)
+        numerator += coefficient * arr[periods - t - 1]
+        denominator += coefficient
+
+    return numerator / denominator
+
+def ewa_fast(seq, span):
+    arr = np.array(seq)
+    return numba_ewa(arr, span)
+
+def ewa_slow(seq, span):
+    return pd.Series(seq).ewm(span=span).mean().values[-1]
+
+ewa = ewa_fast
 
 
 class BaseBars(ABC):
@@ -59,58 +78,95 @@ class BaseBars(ABC):
 
         return msg
 
-    def make_bars_XX(self, num_prev_bars=5, expected_num_ticks_init=252):
-        expected_num_ticks = expected_num_ticks_init
-        expected_imbalance = None
-        cum_theta = num_ticks = 0
-        imbalance_array = []
-        imbalance_bars = []
-        bar_length_array = []
+    @abstractmethod
+    def make_bars(self, exp_nticks=25, nbars=2):
+        pass
 
-        for date, row in self.data.iloc[1:].iterrows():
-            num_ticks += 1
-            imbalance = row['tick'] * row['other']
-            imbalance_array.append(imbalance)
-            cum_theta += imbalance
 
-            print(
-                f'\n'
-                f'date               = {date} \n'
-                f'num_ticks          = {num_ticks} \n'
-                f'imbalance          = {imbalance} \n'
-                f'abs_cum_theta      = {abs(cum_theta)}'
-            )
+class ImbalanceBars(BaseBars):
 
-            if len(imbalance_bars) == 0 and len(imbalance_array) >= expected_num_ticks_init:
-                expected_imbalance = ewa(imbalance_array, window=expected_num_ticks_init)
+    def make_bars(self, exp_nticks=10, nbars=1):
+        """
+        Parameters
+        ----------
+        exp_nticks : int
+        nbars : int
 
-            if expected_imbalance is None:
-                continue
-
-            if abs(cum_theta) >= expected_num_ticks * abs(expected_imbalance):
-                imbalance_bars.append(row)
-                bar_length_array.append(num_ticks)
-                cum_theta = num_ticks = 0
-                expected_num_ticks = ewa(bar_length_array, window=num_prev_bars)
-                expected_imbalance = ewa(imbalance_array, window=num_prev_bars * expected_num_ticks)
-
-            print(
-                f'expected_theta     = {abs(expected_num_ticks * expected_imbalance)} \n'
-                f'expected_imbalance = {expected_imbalance} \n'
-                f'expected_num_ticks = {expected_num_ticks} \n'
-            )
-            input('ENTER')
-
-    def make_bars(self, exp_nticks=21, nbars=5):
+        """
+        exp_theta = None
+        theta = 0
         nticks = 0
         tick_index = []
+        imb_up_list = []
+        imb_down_list = []
+        bars = []
 
+        for date, row in self.data.iloc[1:].iterrows():
+            nticks += 1
+
+            if 0 <= row['tick']:
+                imb_up_list.append(row['other'])
+                imb_down_list.append(0)
+            else:
+                imb_up_list.append(0)
+                imb_down_list.append(row['other'])
+
+            theta = sum(imb_up_list[-nticks:]) - sum(imb_down_list[-nticks:])
+
+            if len(tick_index) == 0 and exp_nticks > len(imb_up_list):
+                # first update
+                exp_imb_up = ewa(imb_up_list, nbars * exp_nticks)
+                exp_imb_down = ewa(imb_down_list, nbars * exp_nticks)
+                exp_imb = exp_imb_up - exp_imb_down
+                exp_theta = exp_nticks * exp_imb
+
+                print(
+                    f'nticks        = {nticks} \n'
+                    f'exp_nticks    = {exp_nticks} \n'
+                    f'exp_imb       = {exp_imb} \n'
+                    f'theta         = {theta} \n'
+                    f'exp_theta     = {exp_theta} \n'
+                )
+
+            if exp_theta is None:
+                continue
+
+            if abs(theta) >= abs(exp_theta):
+                # store
+                tick_index.append(nticks)
+                bars.append(row)
+                # update
+                exp_nticks = ewa(tick_index, nbars)
+                exp_imb_up = ewa(imb_up_list, nbars * exp_nticks)
+                exp_imb_down = ewa(imb_down_list, nbars * exp_nticks)
+                exp_imb = exp_imb_up - exp_imb_down
+                exp_theta = exp_nticks * exp_imb
+                # reset
+                theta = 0
+                nticks = 0
+
+        bars = pd.DataFrame(bars)
+        bars['tick_index'] = tick_index
+        self.bars = bars
+
+
+
+class RunBars(BaseBars):
+
+    def make_bars(self, exp_nticks=20, nbars=2):
+        """
+        Parameters
+        ----------
+        exp_nticks : int
+        nbars : int
+
+        """
+        exp_theta = None
+        theta = 0
+        nticks = 0
+        tick_index = []
         run_up_list = []
         run_down_list = []
-
-        theta = 0
-        exp_theta = None
-
         bars = []
 
         for date, row in self.data.iloc[1:].iterrows():
@@ -126,43 +182,25 @@ class BaseBars(ABC):
             theta = max(sum(run_up_list[-nticks:]), sum(run_down_list[-nticks:]))
 
             if len(tick_index) == 0 and exp_nticks > len(run_up_list):
-                # first calculation of expected values
+                # first update
                 exp_run_up = ewa(run_up_list, nbars * exp_nticks)
                 exp_run_down = ewa(run_down_list, nbars * exp_nticks)
                 exp_run = max(exp_run_up, exp_run_down)
                 exp_theta = exp_nticks * exp_run
-                print(
-                    f'nticks       = {nticks} \n'
-                    f'exp_nticks   = {exp_nticks} \n'
-                    f'exp_run_up   = {exp_run_up} \n'
-                    f'exp_run_down = {exp_run_down} \n'
-                    f'exp_run      = {exp_run} \n'
-                    f'theta        = {theta} \n'
-                    f'exp_theta    = {exp_theta} \n'
-                )
 
             if exp_theta is None:
                 continue
 
             if theta >= exp_theta:
+                # store
                 tick_index.append(nticks)
                 bars.append(row)
-                # update expected values
+                # update
                 exp_nticks = ewa(tick_index, nbars)
                 exp_run_up = ewa(run_up_list, nbars * exp_nticks)
                 exp_run_down = ewa(run_down_list, nbars * exp_nticks)
                 exp_run = max(exp_run_up, exp_run_down)
                 exp_theta = exp_nticks * exp_run
-                # print(
-                #     f'nticks       = {nticks} \n'
-                #     f'exp_nticks   = {exp_nticks} \n'
-                #     f'exp_run_up   = {exp_run_up} \n'
-                #     f'exp_run_down = {exp_run_down} \n'
-                #     f'exp_run      = {exp_run} \n'
-                #     f'theta        = {theta} \n'
-                #     f'exp_theta    = {exp_theta} \n'
-                # )
-                # input('ENTER')
                 # reset
                 theta = 0
                 nticks = 0
@@ -171,32 +209,45 @@ class BaseBars(ABC):
         bars['tick_index'] = tick_index
         self.bars = bars
 
-class ImbalanceBars(BaseBars):
-    pass
-
-
-class RunBars(BaseBars):
-    pass
 
 
 if __name__ == '__main__':
+    import time
+    import matplotlib.pyplot as plt
     from haba.util.tseries import generate_prices
 
     start = '1990-01-01'
     end = '2020-12-31'
-    drift = 0.0
-    volatility = 0.16
+    drift = 0.10
+    volatility = 0.18
     prices = generate_prices(start, end, drift, volatility)
-    # prices.to_csv('foo.csv')
-    # exit()
+    volume = pd.Series(
+        np.random.randint(40_000_000, 100_000_000, len(prices)),
+        index=prices.index,
+    )
+    dollars = prices * volume
+    other = dollars
+    # other = None
 
-    bars = RunBars(prices)
-    bars.make_bars(exp_nticks=25, nbars=1)
+    t0 = time.time()
+    ibs = ImbalanceBars(prices, other)
+    ibs.make_bars(exp_nticks=20, nbars=2.7)
+    t1 = time.time()
+    print(f'elapsed: {t1 - t0:0.2f} seconds')
+    ibs.bars['tick_index'].plot(title='ibs')
+    plt.show()
+    print(ibs.bars.describe())
 
-    # import matplotlib.pyplot as plt
-    # bars.data.tick.cumsum().plot()
-    # plt.show()
-    # exit()
+    exit()
+
+    t2 = time.time()
+    rbs = RunBars(prices, other)
+    rbs.make_bars(exp_nticks=20, nbars=2)
+    t3 = time.time()
+    print(f'elapsed: {t3 - t2:0.2f} seconds')
+    rbs.bars['tick_index'].plot(title='rbs')
+    plt.show()
+    print(rbs.bars.describe())
 
 
 
