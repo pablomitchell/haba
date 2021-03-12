@@ -108,11 +108,11 @@ if __name__ == '__main__':
     volatility = 0.18
 
     ser = generate_prices(start, end, drift, volatility)
-    vol = np.sqrt(business_days_per_year)*get_volatility(ser)
-    vol_emp = np.sqrt(business_days_per_year) * np.log(ser).diff().std()
+    vol = np.sqrt(business_days_per_year) * get_volatility(ser)
+    vol_emp = vol.mean()
 
     ser.plot(legend=True)
-    vol.plot(alpha=0.3, secondary_y=True, legend=True)
+    vol.plot(alpha=0.3, legend=True, secondary_y=True)
     plt.title(f'actual={volatility:0.2f}  vs  empirical={vol_emp:0.2f}')
     plt.show()
 
