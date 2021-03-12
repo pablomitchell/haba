@@ -39,7 +39,7 @@ def generate_prices(start, end, drift, volatility, initial_price=100.0):
     dt = 1.0 / business_days_per_year  # time step
     dates = pd.bdate_range(start, end)
     noise = np.random.randn(len(dates))
-    rets = drift * dt + noise * volatility * np.sqrt(dt)
+    rets = (drift - 0.5 * volatility ** 2) * dt + noise * volatility * np.sqrt(dt)
     rets_ser = pd.Series(rets, index=dates)
     prices_ser = initial_price * (1 + rets_ser).cumprod()
     prices_ser.name = 'price'
